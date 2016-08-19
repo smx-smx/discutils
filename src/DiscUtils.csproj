@@ -3,7 +3,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProductVersion>9.0.30729</ProductVersion>
+    <ProductVersion>8.0.30703</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{DBB340F9-2386-43C2-A473-FA496CBE07A4}</ProjectGuid>
     <OutputType>Library</OutputType>
@@ -12,7 +12,6 @@
     <AssemblyName>DiscUtils</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
-    <SignAssembly>false</SignAssembly>
     <StyleCopEnabled>false</StyleCopEnabled>
     <AssemblyOriginatorKeyFile>..\DiscUtilsSigningKey.snk</AssemblyOriginatorKeyFile>
     <FileUpgradeFlags>
@@ -33,6 +32,7 @@
     <DocumentationFile>DiscUtils.dll.xml</DocumentationFile>
     <RunCodeAnalysis>false</RunCodeAnalysis>
     <CodeAnalysisRuleSet>DiscUtilsCodeAnalysisRules.ruleset</CodeAnalysisRuleSet>
+    <SignAssembly>false</SignAssembly>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -42,6 +42,7 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <DocumentationFile>DiscUtils.dll.xml</DocumentationFile>
+    <SignAssembly>false</SignAssembly>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'SignedRelease|AnyCPU'">
     <OutputPath>bin\SignedRelease\</OutputPath>
@@ -60,6 +61,7 @@
     <RunCodeAnalysis>true</RunCodeAnalysis>
     <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
     <CodeAnalysisRuleSet>DiscUtilsCodeAnalysisRules.ruleset</CodeAnalysisRuleSet>
+    <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release %28StyleCop%29|AnyCPU'">
     <OutputPath>bin\Release\</OutputPath>
@@ -71,8 +73,9 @@
     <ErrorReport>prompt</ErrorReport>
     <CodeAnalysisIgnoreBuiltInRuleSets>false</CodeAnalysisIgnoreBuiltInRuleSets>
     <StyleCopEnabled>true</StyleCopEnabled>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <RunCodeAnalysis>true</RunCodeAnalysis>
+    <SignAssembly>false</SignAssembly>
+    <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -861,6 +864,8 @@
     <Compile Include="Xva\VirtualMachine.cs" />
     <Compile Include="Xva\VirtualMachineBuilder.cs" />
     <Compile Include="ZeroStream.cs" />
+    <Compile Include="CoreCompat\ReflectionHelper.cs" />
+    <Compile Include="CoreCompat\StringExtensions.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Resources.resx">
