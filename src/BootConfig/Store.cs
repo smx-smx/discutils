@@ -98,10 +98,10 @@ namespace DiscUtils.BootConfig
             return new BcdObject(_store, id);
         }
 
-		public BcdObject CreateObject(Guid id, ObjectType type)
-		{
-			return CreateObject (id, (int)type);
-		}
+        public BcdObject CreateObject(Guid id, ObjectType type)
+        {
+            return CreateObject (id, (int)type);
+        }
 
         /// <summary>
         /// Creates an application object.

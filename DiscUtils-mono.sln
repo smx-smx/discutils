@@ -35,6 +35,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DiskClone", "utils\DiskClon
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MSBuildTask", "utils\MSBuildTask\MSBuildTask.csproj", "{345AC4DE-1BF2-43B7-B703-F1573E1F5026}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BCDEdit", "utils\BCDEdit\BCDEdit.csproj", "{5B9547C6-EFDF-4243-9B8D-999AAB223952}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -91,6 +93,14 @@ Global
 		{484C9CBA-8F33-4964-82CE-D8B340C8FF83}.Release|Any CPU.Build.0 = Release|Any CPU
 		{484C9CBA-8F33-4964-82CE-D8B340C8FF83}.SignedRelease|Any CPU.ActiveCfg = SignedRelease|Any CPU
 		{484C9CBA-8F33-4964-82CE-D8B340C8FF83}.SignedRelease|Any CPU.Build.0 = SignedRelease|Any CPU
+		{5B9547C6-EFDF-4243-9B8D-999AAB223952}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5B9547C6-EFDF-4243-9B8D-999AAB223952}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5B9547C6-EFDF-4243-9B8D-999AAB223952}.Release (StyleCop)|Any CPU.ActiveCfg = Debug|Any CPU
+		{5B9547C6-EFDF-4243-9B8D-999AAB223952}.Release (StyleCop)|Any CPU.Build.0 = Debug|Any CPU
+		{5B9547C6-EFDF-4243-9B8D-999AAB223952}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5B9547C6-EFDF-4243-9B8D-999AAB223952}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5B9547C6-EFDF-4243-9B8D-999AAB223952}.SignedRelease|Any CPU.ActiveCfg = Release|Any CPU
+		{5B9547C6-EFDF-4243-9B8D-999AAB223952}.SignedRelease|Any CPU.Build.0 = Release|Any CPU
 		{7FAF2CE2-5A2C-4F43-9298-1FA31D21F820}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{7FAF2CE2-5A2C-4F43-9298-1FA31D21F820}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7FAF2CE2-5A2C-4F43-9298-1FA31D21F820}.Release (StyleCop)|Any CPU.ActiveCfg = Release (StyleCop)|Any CPU
@@ -181,6 +191,45 @@ Global
 		{F8C736C2-6310-4F03-ABEB-4DAB473B181B}.SignedRelease|Any CPU.Build.0 = SignedRelease|Any CPU
 	EndGlobalSection
 	GlobalSection(MonoDevelopProperties) = preSolution
+		Policies = $0
+		$0.TextStylePolicy = $1
+		$1.inheritsSet = VisualStudio
+		$1.inheritsScope = text/plain
+		$1.scope = text/x-csharp
+		$0.CSharpFormattingPolicy = $2
+		$2.IndentSwitchBody = True
+		$2.IndentBlocksInsideExpressions = True
+		$2.AnonymousMethodBraceStyle = NextLine
+		$2.PropertyBraceStyle = NextLine
+		$2.PropertyGetBraceStyle = NextLine
+		$2.PropertySetBraceStyle = NextLine
+		$2.EventBraceStyle = NextLine
+		$2.EventAddBraceStyle = NextLine
+		$2.EventRemoveBraceStyle = NextLine
+		$2.StatementBraceStyle = NextLine
+		$2.ElseNewLinePlacement = NewLine
+		$2.CatchNewLinePlacement = NewLine
+		$2.FinallyNewLinePlacement = NewLine
+		$2.WhileNewLinePlacement = DoNotCare
+		$2.ArrayInitializerWrapping = DoNotChange
+		$2.ArrayInitializerBraceStyle = NextLine
+		$2.BeforeMethodDeclarationParentheses = False
+		$2.BeforeMethodCallParentheses = False
+		$2.BeforeConstructorDeclarationParentheses = False
+		$2.NewLineBeforeConstructorInitializerColon = NewLine
+		$2.NewLineAfterConstructorInitializerColon = SameLine
+		$2.BeforeDelegateDeclarationParentheses = False
+		$2.NewParentheses = False
+		$2.SpacesBeforeBrackets = False
+		$2.inheritsSet = Mono
+		$2.inheritsScope = text/x-csharp
+		$2.scope = text/x-csharp
+		$0.TextStylePolicy = $3
+		$3.FileWidth = 120
+		$3.TabsToSpaces = False
+		$3.inheritsSet = VisualStudio
+		$3.inheritsScope = text/plain
+		$3.scope = text/plain
 		StartupItem = utils\NTFSDump\NTFSDump.csproj
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
