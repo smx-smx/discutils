@@ -16,5 +16,6 @@ grep "^Project" "${sln}" | while read -r project; do
 		#grep TargetFrameworkVersion "${csproj}" | 
 		echo "Patching ${csproj}..."
 		perl -pe "s/(\<TargetFrameworkVersion\>)(.*?)(\<\/TargetFrameworkVersion\>)/\1${framework}\3/g" -i "${csproj}"
+		sed '/\<TargetFrameworkProfile\>/d' -i "${csproj}"
 	done
 done
