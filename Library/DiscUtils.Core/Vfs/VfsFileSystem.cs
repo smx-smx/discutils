@@ -683,7 +683,16 @@ namespace DiscUtils.Vfs
 
                 if (entry.IsSymlink)
                 {
-                    entry = ResolveSymlink(entry, path + "\\" + entry.FileName);
+                    try
+                    {
+                        entry = ResolveSymlink(entry, path + "\\" + entry.FileName);
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        // Dangling (or looping) symlink: list the link itself
+                        // instead of failing the whole directory enumeration.
+                        // Opening it still throws, as it should.
+                    }
                 }
 
                 bool isDir = entry.IsDirectory;
