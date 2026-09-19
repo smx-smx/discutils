@@ -195,13 +195,32 @@ namespace DiscUtils.SquashFs
 
             if (dirEntry.IsSymlink)
             {
-                return new Symlink(_context, inode, inodeRef);
+                return new Symlink(_context, inode, inodeRef, ReadSymlinkTarget(inode));
             }
             if (dirEntry.IsDirectory)
             {
                 return new Directory(_context, inode, inodeRef);
             }
             return new File(_context, inode, inodeRef);
+        }
+
+        /// <summary>
+        /// Reads the symlink target path stored inline after the symlink inode
+        /// in the metadata stream. The inode reader is positioned there by
+        /// <see cref="Inode.Read(MetablockReader)"/>.
+        /// </summary>
+        private string ReadSymlinkTarget(Inode inode)
+        {
+            SymlinkInode? symlinkInode = inode as SymlinkInode;
+            if (symlinkInode == null)
+            {
+                throw new NotImplementedException("Extended symlink inodes are not implemented");
+            }
+            if (symlinkInode.SymlinkSize > 1024 * 1024)
+            {
+                throw new IOException("Unreasonable symlink target size: " + symlinkInode.SymlinkSize);
+            }
+            return _context.InodeReader.ReadString((int)symlinkInode.SymlinkSize);
         }
 
         private MetablockReader[] LoadIndirectReaders(long pos, int count, int recordSize)

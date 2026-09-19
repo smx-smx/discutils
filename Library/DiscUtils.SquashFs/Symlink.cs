@@ -27,12 +27,17 @@ namespace DiscUtils.SquashFs
 {
     internal class Symlink : File, IVfsSymlink<DirectoryEntry, File>
     {
-        public Symlink(Context context, Inode inode, MetadataRef inodeRef)
-            : base(context, inode, inodeRef) {}
+        private readonly string _targetPath;
+
+        public Symlink(Context context, Inode inode, MetadataRef inodeRef, string targetPath)
+            : base(context, inode, inodeRef)
+        {
+            _targetPath = targetPath;
+        }
 
         public string TargetPath
         {
-            get { throw new NotImplementedException(); }
+            get { return _targetPath; }
         }
     }
 }
