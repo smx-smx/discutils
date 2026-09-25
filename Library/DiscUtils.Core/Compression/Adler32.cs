@@ -81,7 +81,7 @@ namespace DiscUtils.Compression
                 int innerEnd = Math.Min(count, processed + 2000);
                 while (processed < innerEnd)
                 {
-                    _a += buffer[processed++];
+                    _a += buffer[offset + processed++];
                     _b += _a;
                 }
 

@@ -282,7 +282,16 @@ namespace DiscUtils.Internal
             }
 
             if (!basePath.EndsWith(@"\"))
+            {
                 basePath = Path.GetDirectoryName(basePath);
+                if (string.IsNullOrEmpty(basePath))
+                {
+                    // Base was a root-relative name with no directory part
+                    // (e.g. a symlink living directly in '\'): resolve
+                    // against the filesystem root.
+                    basePath = @"\";
+                }
+            }
 
             string merged = Path.GetFullPath(Path.Combine(basePath, relativePath));
 

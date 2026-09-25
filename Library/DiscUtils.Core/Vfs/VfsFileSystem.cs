@@ -656,6 +656,30 @@ namespace DiscUtils.Vfs
                 {
                     return GetDirectoryEntry((TDirectory)ConvertDirEntryToFile(entry), pathEntries, pathOffset + 1);
                 }
+                if (entry.IsSymlink)
+                {
+                    // Traverse through a symlink: resolve it, then continue
+                    // from the target directory. Recursion depth is bounded
+                    // by the path length; link loops fail inside
+                    // ResolveSymlink's own budget and surface as not-found.
+                    try
+                    {
+                        string linkPath = "\\" + string.Join("\\", pathEntries, 0, pathOffset + 1);
+                        TDirEntry resolved = ResolveSymlink(entry, linkPath);
+                        if (resolved.IsDirectory)
+                        {
+                            return GetDirectoryEntry((TDirectory)ConvertDirEntryToFile(resolved), pathEntries, pathOffset + 1);
+                        }
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        return null;
+                    }
+                    catch (IOException)
+                    {
+                        return null;
+                    }
+                }
                 throw new IOException(string.Format(CultureInfo.InvariantCulture,
                     "{0} is a file, not a directory", pathEntries[pathOffset]));
             }
@@ -679,35 +703,38 @@ namespace DiscUtils.Vfs
 
             foreach (TDirEntry de in parentDir.AllEntries)
             {
-                TDirEntry entry = de;
-
-                if (entry.IsSymlink)
+                // Classify symlinks by their target, but always list them
+                // under the link's own name (like ls does). Resolving here
+                // must never fail the whole enumeration: unresolvable links
+                // are listed as plain files; opening them still throws.
+                bool isDir = de.IsDirectory;
+                if (de.IsSymlink)
                 {
                     try
                     {
-                        entry = ResolveSymlink(entry, path + "\\" + entry.FileName);
+                        isDir = ResolveSymlink(de, path + "\\" + de.FileName).IsDirectory;
                     }
                     catch (FileNotFoundException)
                     {
-                        // Dangling (or looping) symlink: list the link itself
-                        // instead of failing the whole directory enumeration.
-                        // Opening it still throws, as it should.
+                        isDir = false;
+                    }
+                    catch (IOException)
+                    {
+                        isDir = false;
                     }
                 }
-
-                bool isDir = entry.IsDirectory;
 
                 if ((isDir && dirs) || (!isDir && files))
                 {
                     if (regex.IsMatch(de.SearchName))
                     {
-                        results.Add(Utilities.CombinePaths(resultPrefixPath, FormatFileName(entry.FileName)));
+                        results.Add(Utilities.CombinePaths(resultPrefixPath, FormatFileName(de.FileName)));
                     }
                 }
 
                 if (subFolders && isDir)
                 {
-                    DoSearch(results, Utilities.CombinePaths(resultPrefixPath, FormatFileName(entry.FileName)), regex,
+                    DoSearch(results, Utilities.CombinePaths(resultPrefixPath, FormatFileName(de.FileName)), regex,
                         subFolders, dirs, files);
                 }
             }
