@@ -87,7 +87,13 @@ namespace DiscUtils.SquashFs
             {
                 if (_content == null)
                 {
-                    _content = new FileContentBuffer(Context, (RegularInode)Inode, _inodeRef);
+                    RegularInode regularInode = Inode as RegularInode;
+                    if (regularInode == null)
+                    {
+                        // Device nodes, fifos and sockets have no content.
+                        throw new IOException("Unable to open SquashFS node without content: " + Inode.Type);
+                    }
+                    _content = new FileContentBuffer(Context, regularInode, _inodeRef);
                 }
 
                 return _content;

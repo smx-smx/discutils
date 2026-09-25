@@ -33,6 +33,8 @@ namespace DiscUtils.SquashFs
                                                IUnixFileSystem
     {
         public const int MetadataBufferSize = 8 * 1024;
+        private const ushort CompressionDeflate = 1;
+        private const ushort CompressionLzo = 3;
         private readonly BlockCache<Block> _blockCache;
 
         private readonly Context _context;
@@ -56,9 +58,10 @@ namespace DiscUtils.SquashFs
                 throw new IOException("Invalid SquashFS filesystem - magic mismatch");
             }
 
-            if (_context.SuperBlock.Compression != 1)
+            if (_context.SuperBlock.Compression != CompressionDeflate
+                && _context.SuperBlock.Compression != CompressionLzo)
             {
-                throw new IOException("Unsupported compression used");
+                throw new IOException("Unsupported compression used: " + _context.SuperBlock.Compression);
             }
 
             if (_context.SuperBlock.ExtendedAttrsTableStart != -1)
@@ -97,10 +100,15 @@ namespace DiscUtils.SquashFs
                     4);
             }
 
-            // Bootstrap the root directory
+            // Bootstrap the root directory (mksquashfs emits an extended
+            // directory inode once the root grows past the basic form).
             _context.InodeReader.SetPosition(_context.SuperBlock.RootInode);
-            DirectoryInode dirInode = (DirectoryInode)Inode.Read(_context.InodeReader);
-            RootDirectory = new Directory(_context, dirInode, _context.SuperBlock.RootInode);
+            Inode rootInode = Inode.Read(_context.InodeReader);
+            if (!(rootInode is IDirectoryInode))
+            {
+                throw new IOException("Invalid SquashFS filesystem - root is not a directory");
+            }
+            RootDirectory = new Directory(_context, rootInode, _context.SuperBlock.RootInode);
         }
 
         public override string FriendlyName
@@ -264,6 +272,15 @@ namespace DiscUtils.SquashFs
             int readLen = diskLen & 0x00FFFFFF;
             bool isCompressed = (diskLen & 0x01000000) == 0;
 
+            if (readLen == 0)
+            {
+                // Sparse block: all zeros, not stored on disk. The cached
+                // buffer may hold stale data, so clear it explicitly.
+                Array.Clear(block.Data, 0, block.Data.Length);
+                block.Available = block.Data.Length;
+                return block;
+            }
+
             if (isCompressed)
             {
                 if (_ioBuffer == null || readLen > _ioBuffer.Length)
@@ -273,11 +290,18 @@ namespace DiscUtils.SquashFs
 
                 StreamUtilities.ReadExact(stream, _ioBuffer, 0, readLen);
 
-                using (
-                    ZlibStream zlibStream = new ZlibStream(new MemoryStream(_ioBuffer, 0, readLen, false),
-                        CompressionMode.Decompress, true))
+                if (_context.SuperBlock.Compression == CompressionLzo)
                 {
-                    block.Available = StreamUtilities.ReadMaximum(zlibStream, block.Data, 0, (int)_context.SuperBlock.BlockSize);
+                    block.Available = Lzo1X.Decompress(_ioBuffer, 0, readLen, block.Data, 0, block.Data.Length);
+                }
+                else
+                {
+                    using (
+                        ZlibStream zlibStream = new ZlibStream(new MemoryStream(_ioBuffer, 0, readLen, false),
+                            CompressionMode.Decompress, true))
+                    {
+                        block.Available = StreamUtilities.ReadMaximum(zlibStream, block.Data, 0, (int)_context.SuperBlock.BlockSize);
+                    }
                 }
             }
             else
@@ -321,11 +345,18 @@ namespace DiscUtils.SquashFs
 
                 StreamUtilities.ReadExact(stream, _ioBuffer, 0, readLen);
 
-                using (
-                    ZlibStream zlibStream = new ZlibStream(new MemoryStream(_ioBuffer, 0, readLen, false),
-                        CompressionMode.Decompress, true))
+                if (_context.SuperBlock.Compression == CompressionLzo)
                 {
-                    block.Available = StreamUtilities.ReadMaximum(zlibStream, block.Data, 0, MetadataBufferSize);
+                    block.Available = Lzo1X.Decompress(_ioBuffer, 0, readLen, block.Data, 0, block.Data.Length);
+                }
+                else
+                {
+                    using (
+                        ZlibStream zlibStream = new ZlibStream(new MemoryStream(_ioBuffer, 0, readLen, false),
+                            CompressionMode.Decompress, true))
+                    {
+                        block.Available = StreamUtilities.ReadMaximum(zlibStream, block.Data, 0, MetadataBufferSize);
+                    }
                 }
             }
             else

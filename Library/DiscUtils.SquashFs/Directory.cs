@@ -50,13 +50,21 @@ namespace DiscUtils.SquashFs
                 reader.SetPosition(_dirInode.StartBlock, _dirInode.Offset);
 
                 // For some reason, always 3 greater than actual..
-                while (reader.DistanceFrom(_dirInode.StartBlock, _dirInode.Offset) < _dirInode.FileSize - 3)
+                // NOTE: MetablockReader.DistanceFrom cannot be used here: it
+                // scales metablock address deltas (compressed file offsets)
+                // by the decompressed metablock size, so it overshoots as
+                // soon as a listing spans metablocks. Count consumed bytes
+                // explicitly instead (header 12, record 8 + name length).
+                long consumed = 0;
+                while (consumed < _dirInode.FileSize - 3)
                 {
                     DirectoryHeader header = DirectoryHeader.ReadFrom(reader);
+                    consumed += 12;
 
                     for (int i = 0; i < header.Count + 1; ++i)
                     {
                         DirectoryRecord record = DirectoryRecord.ReadFrom(reader);
+                        consumed += 8 + record.Name.Length;
                         records.Add(new DirectoryEntry(header, record));
                     }
                 }
