@@ -187,6 +187,7 @@ namespace DiscUtils.Vdfs
         protected readonly VdfsContext Context;
         protected readonly VdfsCatRecord Record;
         private IBuffer _content;
+        private long? _unpacked;
 
         public VdfsFile(VdfsContext context, VdfsCatRecord record)
         {
@@ -228,7 +229,28 @@ namespace DiscUtils.Vdfs
                 }
                 long size = (long)VdfsConstants.ReadU64(
                     Record.Value, VdfsConstants.FolderRecordSize + VdfsConstants.ForkSizeOff);
-                return size < 0 ? 0 : size;
+                if (size < 0)
+                {
+                    return 0;
+                }
+                if (Entry.IsCompressed)
+                {
+                    // size_in_bytes is the compressed blob size; report the
+                    // descriptor's unpacked size so reads never truncate.
+                    if (_unpacked == null)
+                    {
+                        try
+                        {
+                            _unpacked = (long)Context.GetUnpackedSize(Record);
+                        }
+                        catch (IOException)
+                        {
+                            _unpacked = size;
+                        }
+                    }
+                    return _unpacked.Value < 0 ? size : _unpacked.Value;
+                }
+                return size;
             }
         }
 

@@ -280,6 +280,22 @@ namespace DiscUtils.Vdfs
 
         public VdfsCatRecord FindChild(ulong parentId, string name)
         {
+            // Links (hard/internal) may share their (parent, name) key with
+            // the real record (e.g. usd/usd -> lib next to a real usd dir).
+            // Prefer the real record so traversal never enters links (which
+            // would cycle back up); fall back to the link when it stands
+            // alone. This inverts the driver's shadowing order, deliberately:
+            // the driver's link-first order is unmappable without cycles.
+            VdfsCatRecord found = ScanChild(parentId, name, false);
+            if (found == null)
+            {
+                found = ScanChild(parentId, name, true);
+            }
+            return found;
+        }
+
+        private VdfsCatRecord ScanChild(ulong parentId, string name, bool includeLinks)
+        {
             byte[] key = Encoding.UTF8.GetBytes(name);
             Node node = FindLeaf(parentId, key, 0);
             int index = LeafPosition(node, parentId, key, 0);
@@ -302,7 +318,7 @@ namespace DiscUtils.Vdfs
                     {
                         return null;
                     }
-                    if (rec.Name == name)
+                    if (rec.Name == name && (includeLinks || !IsLink(rec.Type)))
                     {
                         return rec;
                     }
@@ -315,6 +331,11 @@ namespace DiscUtils.Vdfs
                 index = 0;
             }
             return null;
+        }
+
+        private static bool IsLink(byte type)
+        {
+            return type == VdfsConstants.RecHLink || type == VdfsConstants.RecILink;
         }
 
         /// <summary>Every leaf record in the tree (for object-id indexing).</summary>

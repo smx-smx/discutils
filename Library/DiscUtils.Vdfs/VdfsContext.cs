@@ -4,7 +4,6 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 
-using DiscUtils.Compression;
 using DiscUtils.Vfs;
 
 namespace DiscUtils.Vdfs
@@ -380,7 +379,9 @@ namespace DiscUtils.Vdfs
             var inlineBlocks = new List<VdfsOverflowExtent>();
             for (int i = 0; i < VdfsConstants.ExtentsInFork; i++)
             {
-                int off = VdfsConstants.ForkDataOff + i * VdfsConstants.IExtentSize;
+                // fork[] starts at the fork data (size/blocks precede it in
+                // the record but were split out by the caller).
+                int off = i * VdfsConstants.IExtentSize;
                 var extent = new VdfsExtent
                 {
                     Begin = VdfsConstants.ReadU64(fork, off),
@@ -500,14 +501,48 @@ namespace DiscUtils.Vdfs
             return target;
         }
 
-        internal byte[] ReadCompressed(VdfsCatRecord rec)
+        /// <summary>Unpacked size of an extent-compressed file, from the blob
+        /// descriptor (size_in_bytes is the compressed size). Throws when the
+        /// descriptor cannot be located.</summary>
+        internal ulong GetUnpackedSize(VdfsCatRecord rec)
         {
             if (rec.Value.Length < VdfsConstants.FileRecordSize)
             {
                 throw new IOException("VDFS truncated file record");
             }
             int forkOff = VdfsConstants.FolderRecordSize;
-            ulong unpacked = VdfsConstants.ReadU64(rec.Value, forkOff + VdfsConstants.ForkSizeOff);
+            ulong compSize = VdfsConstants.ReadU64(rec.Value, forkOff + VdfsConstants.ForkSizeOff);
+            ulong blocks = VdfsConstants.ReadU64(rec.Value, forkOff + VdfsConstants.ForkBlocksOff);
+            if (blocks == 0 || compSize < (ulong)VdfsConstants.CompDescrLen05)
+            {
+                throw new IOException("VDFS not an extent-compressed file");
+            }
+            var fork = new byte[VdfsConstants.ForkDataLen];
+            Array.Copy(rec.Value, forkOff + VdfsConstants.ForkDataOff, fork, 0, fork.Length);
+            List<VdfsExtent> extents = ResolveExtents(rec.ObjectId, blocks, blocks, fork);
+            if (extents.Count == 0)
+            {
+                throw new IOException("VDFS compressed file has no extents");
+            }
+            ulong tailLen = compSize < 131072 ? compSize : 131072;
+            byte[] tail = ReadConcat(extents, compSize - tailLen, tailLen);
+            CompDescr descr = FindDescriptor(tail);
+            if (descr == null)
+            {
+                throw new IOException("VDFS compressed descriptor not found");
+            }
+            return descr.UnpackedSize;
+        }
+
+        internal byte[] ReadCompressed(VdfsCatRecord rec)        {
+            if (rec.Value.Length < VdfsConstants.FileRecordSize)
+            {
+                throw new IOException("VDFS truncated file record");
+            }
+            int forkOff = VdfsConstants.FolderRecordSize;
+            // size_in_bytes is the COMPRESSED blob size here (not the file
+            // size); the unpacked size lives in the blob descriptor.
+            ulong compSize = VdfsConstants.ReadU64(rec.Value, forkOff + VdfsConstants.ForkSizeOff);
             ulong blocks = VdfsConstants.ReadU64(rec.Value, forkOff + VdfsConstants.ForkBlocksOff);
             var fork = new byte[VdfsConstants.ForkDataLen];
             Array.Copy(rec.Value, forkOff + VdfsConstants.ForkDataOff, fork, 0, fork.Length);
@@ -515,6 +550,7 @@ namespace DiscUtils.Vdfs
             if (blocks == 0)
             {
                 // Inline-compressed: type[3], packed-size byte, payload.
+                // size_in_bytes is the unpacked size in this layout.
                 string kind = Encoding.ASCII.GetString(fork, 0, 3);
                 int packed = fork[3];
                 int end = 4 + packed;
@@ -525,52 +561,47 @@ namespace DiscUtils.Vdfs
                 var payload = new byte[end - 4];
                 Array.Copy(fork, 4, payload, 0, payload.Length);
                 byte[] plain = Inflate(kind, payload);
-                if ((ulong)plain.Length > unpacked)
+                if ((ulong)plain.Length > compSize)
                 {
-                    var cut = new byte[(int)unpacked];
+                    var cut = new byte[(int)compSize];
                     Array.Copy(plain, cut, cut.Length);
                     return cut;
                 }
                 return plain;
             }
 
-            // Extent blob: [chunks][comp-extent table][descriptor][auth?].
+            // Extent blob: [chunks][hashes?][comp-extent table][descriptor].
             List<VdfsExtent> extents = ResolveExtents(rec.ObjectId, blocks, blocks, fork);
             if (extents.Count == 0)
             {
                 throw new IOException("VDFS compressed file has no extents");
             }
-            ulong compTotal = blocks;
-            byte[] blob = ReadConcat(extents, 0, compTotal);
+            byte[] blob = ReadConcat(extents, 0, compSize);
 
-            int descrOff = FindDescriptor(blob);
-            if (descrOff < 0)
+            CompDescr descr = FindDescriptor(blob);
+            if (descr == null)
             {
                 throw new IOException("VDFS compressed descriptor not found");
             }
-            string magic = Encoding.ASCII.GetString(blob, descrOff + 1, 3);
-            int extentsNum = VdfsConstants.ReadU16(blob, descrOff + 12);
-            long tableOff = (long)descrOff - (long)extentsNum * VdfsConstants.CompExtentSize;
-            if (tableOff < 0)
+            string magic = descr.Kind;
+            int extentsNum = descr.ExtentsNum;
+            long tableOff = descr.TableStart;
+            if (extentsNum == 0)
             {
-                throw new IOException("VDFS compressed extent table out of range");
-            }
-            if (blob[descrOff] == (byte)'h')
-            {
-                // Single-stream layout: everything before the table inflates
-                // to the whole file.
+                // Degenerate single-stream layout: everything before the
+                // table (descriptors, hashes and signature excluded by the
+                // table math above) inflates to the whole file.
                 var region = new byte[tableOff];
                 Array.Copy(blob, region, region.Length);
                 return Inflate(magic, region);
             }
             var result = new List<byte>();
+            // Table order is unpacked order (creation sequence); packed
+            // offsets only locate the bytes. Do NOT sort by start: threaded
+            // compression can lay chunks out of unpacked sequence.
             for (int i = 0; i < extentsNum; i++)
             {
                 long eoff = tableOff + i * VdfsConstants.CompExtentSize;
-                if (eoff + VdfsConstants.CompExtentSize > descrOff)
-                {
-                    break;
-                }
                 ushort flags = VdfsConstants.ReadU16(blob, (int)eoff + 2);
                 uint len = VdfsConstants.ReadU32(blob, (int)eoff + 4);
                 ulong start = VdfsConstants.ReadU64(blob, (int)eoff + 8);
@@ -597,39 +628,168 @@ namespace DiscUtils.Vdfs
             return result.ToArray();
         }
 
-        private static int FindDescriptor(byte[] blob)
+        /// <summary>Parsed compression descriptor. mkfs emits 40-byte (layout
+        /// 06) and 32-byte (layout 05) descriptors with an 8-byte reserved
+        /// prefix, plus a compact 32-byte form with the magic up front.
+        /// magic[0] selects integrity framing: 'C' none, 'I' md5, 'H' sha1,
+        /// 'h' sha256, each with (extents+1) hashes plus a signature tail.</summary>
+        internal sealed class CompDescr
         {
-            int[] lens = new int[] { VdfsConstants.CompDescrLen06, VdfsConstants.CompDescrLen05 };
-            foreach (int len in lens)
+            public string Kind = string.Empty;
+            public int ExtentsNum;
+            public ulong UnpackedSize;
+            public long TableStart;
+        }
+
+        private static bool TryParseDescr(byte[] blob, int magicAt, ushort wantVer, out CompDescr descr)
+        {
+            descr = null;
+            // The table slot always reserves the versioned descriptor length
+            // (40 for layout 06, 32 for 05); compact forms leave slack ahead.
+            int descrLen = wantVer == VdfsConstants.CompLayout06 ? 40 : 32;
+            if (magicAt < 8 || magicAt + 24 > blob.Length)
             {
-                if (blob.Length < len)
+                return false;
+            }
+            if (blob[magicAt] != (byte)'C' && blob[magicAt] != (byte)'I'
+                && blob[magicAt] != (byte)'H' && blob[magicAt] != (byte)'h')
+            {
+                return false;
+            }
+            string name = Encoding.ASCII.GetString(blob, magicAt + 1, 3);
+            if (name != "Zip" && name != "Gzp" && name != "Lzo" && name != "Zst")
+            {
+                return false;
+            }
+            int extOff = magicAt + 4;
+            int verOff = magicAt + 6;
+            int sizeOff = magicAt + 8;
+            if (VdfsConstants.ReadU16(blob, verOff) != wantVer)
+            {
+                return false;
+            }
+            int extentsNum = VdfsConstants.ReadU16(blob, extOff);
+            ulong unpacked = VdfsConstants.ReadU64(blob, sizeOff);
+            if (unpacked == 0 || unpacked > (1UL << 40))
+            {
+                return false;
+            }
+            uint logChunk = VdfsConstants.ReadU32(blob, sizeOff + 12);
+            if (logChunk < 12 || logChunk > 20)
+            {
+                return false;
+            }
+            int hashLen = blob[magicAt] == (byte)'I' ? 16
+                : blob[magicAt] == (byte)'H' ? 20
+                : blob[magicAt] == (byte)'h' ? 32 : 0;
+            int signLen = 0;
+            if (hashLen > 0)
+            {
+                // Authenticated forms keep the standard prefix: sign type
+                // sits right before the magic.
+                if (magicAt + 32 > blob.Length)
                 {
-                    continue;
+                    return false;
                 }
-                int c = blob.Length - len;
-                string name = Encoding.ASCII.GetString(blob, c + 9, 3);
-                if (name != "Zip" && name != "Gzp" && name != "Lzo" && name != "Zst")
+                byte signType = blob[magicAt - 1];
+                if (signType == 1)
                 {
-                    continue;
+                    signLen = 128;
                 }
-                ushort ver = VdfsConstants.ReadU16(blob, c + 14);
-                if (ver == VdfsConstants.CompLayout05 || ver == VdfsConstants.CompLayout06)
+                else if (signType == 2)
                 {
-                    return c;
+                    signLen = 256;
+                }
+                else if (signType != 0)
+                {
+                    return false;
                 }
             }
-            return -1;
+            long tableStart = (long)blob.Length - descrLen - signLen
+                - (long)(extentsNum + 1) * hashLen
+                - (long)extentsNum * VdfsConstants.CompExtentSize;
+            if (tableStart < 0)
+            {
+                return false;
+            }
+            // Every table entry carries the "XT" magic and addresses chunk
+            // bytes below the table: chunk payload is the only region that
+            // satisfies both, which disambiguates overlapping candidates.
+            // All-zero slots are squeeze padding, not chunks.
+            for (int i = 0; i < extentsNum; i++)
+            {
+                long eoff = tableStart + i * VdfsConstants.CompExtentSize;
+                if (blob[(int)eoff] != (byte)'X' || blob[(int)eoff + 1] != (byte)'T')
+                {
+                    return false;
+                }
+                ulong start = VdfsConstants.ReadU64(blob, (int)eoff + 8);
+                uint len = VdfsConstants.ReadU32(blob, (int)eoff + 4);
+                if (len == 0)
+                {
+                    if (start != 0)
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+                if (start + len < start || start + len > (ulong)tableStart)
+                {
+                    return false;
+                }
+            }
+            descr = new CompDescr
+            {
+                Kind = name,
+                ExtentsNum = extentsNum,
+                UnpackedSize = unpacked,
+                TableStart = tableStart
+            };
+            return true;
+        }
+
+        private static CompDescr FindDescriptor(byte[] blob)
+        {
+            CompDescr descr;
+            // Standard 40-byte (layout 06, magic at tail-32). Also matches
+            // compact 32-byte forms: same magic slot, slack from the
+            // reserved descriptor length, same table math.
+            if (TryParseDescr(blob, blob.Length - 32,
+                VdfsConstants.CompLayout06, out descr))
+            {
+                return descr;
+            }
+            // Standard 32-byte (layout 05, magic at tail-24).
+            if (TryParseDescr(blob, blob.Length - 24,
+                VdfsConstants.CompLayout05, out descr))
+            {
+                return descr;
+            }
+            return null;
         }
 
         private static byte[] Inflate(string kind, byte[] payload)
         {
             if (kind == "Zip")
             {
-                using (var ms = new MemoryStream(payload, false))
-                using (var zs = new ZlibStream(ms, CompressionMode.Decompress, false))
+                // Chunk windows carry mkfs alignment padding past the stream
+                // end, which would break footer checks: raw-inflate the body
+                // and stop at the deflate end marker like the driver does
+                // (these images are unauthenticated, so no hash to check).
+                if (payload.Length < 2)
+                {
+                    throw new IOException("truncated zlib chunk");
+                }
+                int header = (payload[0] << 8) | payload[1];
+                if (header % 31 != 0 || (header & 0x0F00) != (8 << 8) || (header & 0x0020) != 0)
+                {
+                    throw new IOException("bad zlib header");
+                }
+                using (var ms = new MemoryStream(payload, 2, payload.Length - 2, false))
+                using (var ds = new DeflateStream(ms, CompressionMode.Decompress, false))
                 using (var out_ = new MemoryStream())
                 {
-                    zs.CopyTo(out_);
+                    ds.CopyTo(out_);
                     return out_.ToArray();
                 }
             }
@@ -644,8 +804,11 @@ namespace DiscUtils.Vdfs
         {
             // Minimal gzip framing (no preset dictionaries in mkfs output):
             // 10-byte header, optional extra/name/comment per flags, raw
-            // deflate body, 8-byte trailer.
-            if (payload.Length < 18 || payload[0] != 0x1F || payload[1] != 0x8B || payload[2] != 8)
+            // deflate body. The 8-byte trailer is NOT cut: chunk windows may
+            // carry alignment padding past the stream end, so inflation stops
+            // at the deflate end marker and ignores the rest (crc/isize are
+            // unchecked, matching the driver's no-auth read path).
+            if (payload.Length < 10 || payload[0] != 0x1F || payload[1] != 0x8B || payload[2] != 8)
             {
                 throw new IOException("bad gzip header");
             }
@@ -679,12 +842,11 @@ namespace DiscUtils.Vdfs
             {
                 pos += 2;
             }
-            int end = payload.Length - 8;
-            if (pos > end)
+            if (pos >= payload.Length)
             {
                 throw new IOException("bad gzip framing");
             }
-            using (var ms = new MemoryStream(payload, pos, end - pos, false))
+            using (var ms = new MemoryStream(payload, pos, payload.Length - pos, false))
             using (var ds = new DeflateStream(ms, CompressionMode.Decompress, false))
             using (var out_ = new MemoryStream())
             {
