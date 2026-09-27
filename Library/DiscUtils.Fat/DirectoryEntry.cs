@@ -62,6 +62,7 @@ namespace DiscUtils.Fat
             _options = toCopy._options;
             _fatVariant = toCopy._fatVariant;
             Name = toCopy.Name;
+            LongName = toCopy.LongName;
             _attr = toCopy._attr;
             _creationTimeTenth = toCopy._creationTimeTenth;
             _creationTime = toCopy._creationTime;
@@ -126,6 +127,21 @@ namespace DiscUtils.Fat
         }
 
         public FileName Name { get; set; }
+
+        /// <summary>
+        /// VFAT long name (null when the entry has no valid LFN run).
+        /// </summary>
+        public string LongName { get; set; }
+
+        internal string GetDisplayName(System.Text.Encoding encoding)
+        {
+            return LongName ?? Name.GetDisplayName(encoding);
+        }
+
+        internal string GetSearchName(System.Text.Encoding encoding)
+        {
+            return LongName ?? Name.GetSearchName(encoding);
+        }
 
         internal void WriteTo(Stream stream)
         {

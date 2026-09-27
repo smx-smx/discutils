@@ -974,7 +974,7 @@ namespace DiscUtils.Fat
             List<string> dirs = new List<string>(entries.Length);
             foreach (DirectoryEntry dirEntry in entries)
             {
-                dirs.Add(Utilities.CombinePaths(path, dirEntry.Name.GetDisplayName(FatOptions.FileNameEncoding)));
+                dirs.Add(Utilities.CombinePaths(path, dirEntry.GetDisplayName(FatOptions.FileNameEncoding)));
             }
 
             return dirs.ToArray();
@@ -1010,7 +1010,7 @@ namespace DiscUtils.Fat
             List<string> files = new List<string>(entries.Length);
             foreach (DirectoryEntry dirEntry in entries)
             {
-                files.Add(Utilities.CombinePaths(path, dirEntry.Name.GetDisplayName(FatOptions.FileNameEncoding)));
+                files.Add(Utilities.CombinePaths(path, dirEntry.GetDisplayName(FatOptions.FileNameEncoding)));
             }
 
             return files.ToArray();
@@ -1046,7 +1046,7 @@ namespace DiscUtils.Fat
             List<string> result = new List<string>(entries.Length);
             foreach (DirectoryEntry dirEntry in entries)
             {
-                result.Add(Utilities.CombinePaths(path, dirEntry.Name.GetDisplayName(FatOptions.FileNameEncoding)));
+                result.Add(Utilities.CombinePaths(path, dirEntry.GetDisplayName(FatOptions.FileNameEncoding)));
             }
 
             return result.ToArray();
@@ -1069,9 +1069,10 @@ namespace DiscUtils.Fat
             List<string> result = new List<string>(entries.Length);
             foreach (DirectoryEntry dirEntry in entries)
             {
-                if (re.IsMatch(dirEntry.Name.GetSearchName(FatOptions.FileNameEncoding)))
+                if (re.IsMatch(dirEntry.GetSearchName(FatOptions.FileNameEncoding))
+                    || re.IsMatch(dirEntry.Name.GetSearchName(FatOptions.FileNameEncoding)))
                 {
-                    result.Add(Utilities.CombinePaths(path, dirEntry.Name.GetDisplayName(FatOptions.FileNameEncoding)));
+                    result.Add(Utilities.CombinePaths(path, dirEntry.GetDisplayName(FatOptions.FileNameEncoding)));
                 }
             }
 
@@ -1601,7 +1602,19 @@ namespace DiscUtils.Fat
                 parent = null;
                 return 0;
             }
-            entryId = dir.FindEntry(new FileName(pathEntries[pathOffset], FatOptions.FileNameEncoding));
+            entryId = -1;
+            try
+            {
+                entryId = dir.FindEntry(new FileName(pathEntries[pathOffset], FatOptions.FileNameEncoding));
+            }
+            catch (ArgumentException)
+            {
+                // not 8.3-shaped (e.g. a long name): fall through to LFN scan
+            }
+            if (entryId < 0)
+            {
+                entryId = dir.FindEntry(pathEntries[pathOffset]);
+            }
             if (entryId >= 0)
             {
                 if (pathOffset == pathEntries.Length - 1)
@@ -1637,15 +1650,16 @@ namespace DiscUtils.Fat
 
                 if ((isDir && dirs) || (!isDir && files))
                 {
-                    if (regex.IsMatch(de.Name.GetSearchName(FatOptions.FileNameEncoding)))
+                    if (regex.IsMatch(de.GetSearchName(FatOptions.FileNameEncoding))
+                        || regex.IsMatch(de.Name.GetSearchName(FatOptions.FileNameEncoding)))
                     {
-                        results.Add(Utilities.CombinePaths(path, de.Name.GetDisplayName(FatOptions.FileNameEncoding)));
+                        results.Add(Utilities.CombinePaths(path, de.GetDisplayName(FatOptions.FileNameEncoding)));
                     }
                 }
 
                 if (subFolders && isDir)
                 {
-                    DoSearch(results, Utilities.CombinePaths(path, de.Name.GetDisplayName(FatOptions.FileNameEncoding)),
+                    DoSearch(results, Utilities.CombinePaths(path, de.GetDisplayName(FatOptions.FileNameEncoding)),
                         regex, subFolders, dirs, files);
                 }
             }

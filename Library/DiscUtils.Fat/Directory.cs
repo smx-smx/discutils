@@ -223,6 +223,22 @@ namespace DiscUtils.Fat
             return -1;
         }
 
+        internal long FindEntry(string longName)
+        {
+            foreach (long id in _entries.Keys)
+            {
+                DirectoryEntry focus = _entries[id];
+                if (focus.LongName != null
+                    && string.Equals(focus.LongName, longName, System.StringComparison.OrdinalIgnoreCase)
+                    && (focus.Attributes & FatAttributes.VolumeId) == 0)
+                {
+                    return id;
+                }
+            }
+
+            return -1;
+        }
+
         internal SparseStream OpenFile(FileName name, FileMode mode, FileAccess fileAccess)
         {
             if (mode == FileMode.Append || mode == FileMode.Truncate)
@@ -351,6 +367,7 @@ namespace DiscUtils.Fat
             _selfEntryLocation = -1;
             _parentEntryLocation = -1;
 
+            var lfnSlots = new System.Collections.Generic.List<byte[]>();
             while (_dirStream.Position < _dirStream.Length)
             {
                 long streamPos = _dirStream.Position;
@@ -359,33 +376,56 @@ namespace DiscUtils.Fat
                 if (entry.Attributes ==
                     (FatAttributes.ReadOnly | FatAttributes.Hidden | FatAttributes.System | FatAttributes.VolumeId))
                 {
-                    // Long File Name entry
+                    // Long File Name slot: buffer the raw bytes, validated
+                    // once the owning entry arrives
+                    byte[] raw = new byte[32];
+                    _dirStream.Position = streamPos;
+                    _dirStream.Read(raw, 0, raw.Length);
+                    lfnSlots.Add(raw);
                 }
                 else if (entry.Name.IsDeleted())
                 {
                     // E5 = Free Entry
+                    lfnSlots.Clear();
                     _freeEntries.Add(streamPos);
                 }
                 else if (entry.Name == FileName.SelfEntryName)
                 {
+                    lfnSlots.Clear();
                     _selfEntry = entry;
                     _selfEntryLocation = streamPos;
                 }
                 else if (entry.Name == FileName.ParentEntryName)
                 {
+                    lfnSlots.Clear();
                     _parentEntry = entry;
                     _parentEntryLocation = streamPos;
                 }
                 else if (entry.Name.IsEndMarker())
                 {
                     // Free Entry, no more entries available
+                    lfnSlots.Clear();
                     _endOfEntries = streamPos;
                     break;
                 }
                 else
                 {
+                    AttachLongName(entry, lfnSlots);
+                    lfnSlots.Clear();
                     _entries.Add(streamPos, entry);
                 }
+            }
+        }
+
+        private static void AttachLongName(DirectoryEntry entry, System.Collections.Generic.List<byte[]> slots)
+        {
+            if (slots.Count == 0) return;
+            byte[] shortName = new byte[11];
+            entry.Name.GetBytes(shortName, 0);
+            string longName;
+            if (LongFileName.TryParse(slots, shortName, out longName))
+            {
+                entry.LongName = longName;
             }
         }
 
