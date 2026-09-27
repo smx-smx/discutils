@@ -281,30 +281,47 @@ namespace DiscUtils.Internal
                 return relativePath;
             }
 
-            if (!basePath.EndsWith(@"\"))
+            // Element-wise on '\' (firmware links also use '/'): System.IO.Path
+            // treats '\' as a plain char on Unix, which broke every symlink
+            // resolution on Linux. Same drop-last-component rule as before.
+            basePath = basePath.Replace('/', '\\');
+            relativePath = relativePath.Replace('/', '\\');
+            List<string> baseElements = new List<string>(
+                basePath.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries));
+            bool rooted = basePath.StartsWith("\\", StringComparison.Ordinal);
+            if (!basePath.EndsWith("\\", StringComparison.Ordinal) && baseElements.Count > 0)
             {
-                basePath = Path.GetDirectoryName(basePath);
-                if (string.IsNullOrEmpty(basePath))
+                baseElements.RemoveAt(baseElements.Count - 1);
+            }
+
+            foreach (string part in relativePath.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (part == ".")
                 {
-                    // Base was a root-relative name with no directory part
-                    // (e.g. a symlink living directly in '\'): resolve
-                    // against the filesystem root.
-                    basePath = @"\";
+                    continue;
                 }
+                if (part == "..")
+                {
+                    if (baseElements.Count > 0)
+                    {
+                        baseElements.RemoveAt(baseElements.Count - 1);
+                    }
+                    continue;
+                }
+                baseElements.Add(part);
             }
 
-            string merged = Path.GetFullPath(Path.Combine(basePath, relativePath));
-
-            if (basePath.StartsWith(@"\") && merged.Length > 2 && merged[1].Equals(':'))
-            {
-                return merged.Substring(2);
-            }
-
-            return merged;
+            string merged = string.Join("\\", baseElements.ToArray());
+            return rooted ? "\\" + merged : merged;
         }
 
         public static string ResolvePath(string basePath, string path)
         {
+            // Unix-absolute link targets ("/bin/...") are rooted as well.
+            if (path.StartsWith("/", StringComparison.Ordinal))
+            {
+                path = "\\" + path.Substring(1).Replace('/', '\\');
+            }
             if (!path.StartsWith("\\", StringComparison.OrdinalIgnoreCase))
             {
                 return ResolveRelativePath(basePath, path);
