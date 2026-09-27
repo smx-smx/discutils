@@ -35,6 +35,7 @@ namespace DiscUtils.SquashFs
         public const int MetadataBufferSize = 8 * 1024;
         private const ushort CompressionDeflate = 1;
         private const ushort CompressionLzo = 3;
+        private const ushort CompressionZstd = 6;
         private readonly BlockCache<Block> _blockCache;
 
         private readonly Context _context;
@@ -59,7 +60,8 @@ namespace DiscUtils.SquashFs
             }
 
             if (_context.SuperBlock.Compression != CompressionDeflate
-                && _context.SuperBlock.Compression != CompressionLzo)
+                && _context.SuperBlock.Compression != CompressionLzo
+                && _context.SuperBlock.Compression != CompressionZstd)
             {
                 throw new IOException("Unsupported compression used: " + _context.SuperBlock.Compression);
             }
@@ -222,7 +224,7 @@ namespace DiscUtils.SquashFs
             SymlinkInode? symlinkInode = inode as SymlinkInode;
             if (symlinkInode == null)
             {
-                throw new NotImplementedException("Extended symlink inodes are not implemented");
+                throw new NotSupportedException("Not a symlink inode: " + inode.Type);
             }
             if (symlinkInode.SymlinkSize > 1024 * 1024)
             {
@@ -294,6 +296,10 @@ namespace DiscUtils.SquashFs
                 {
                     block.Available = Lzo1X.Decompress(_ioBuffer, 0, readLen, block.Data, 0, block.Data.Length);
                 }
+                else if (_context.SuperBlock.Compression == CompressionZstd)
+                {
+                    block.Available = ZstdDecompressor.Decompress(_ioBuffer, 0, readLen, block.Data, 0, block.Data.Length);
+                }
                 else
                 {
                     using (
@@ -348,6 +354,10 @@ namespace DiscUtils.SquashFs
                 if (_context.SuperBlock.Compression == CompressionLzo)
                 {
                     block.Available = Lzo1X.Decompress(_ioBuffer, 0, readLen, block.Data, 0, block.Data.Length);
+                }
+                else if (_context.SuperBlock.Compression == CompressionZstd)
+                {
+                    block.Available = ZstdDecompressor.Decompress(_ioBuffer, 0, readLen, block.Data, 0, block.Data.Length);
                 }
                 else
                 {

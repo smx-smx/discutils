@@ -24,7 +24,7 @@ using DiscUtils.Streams;
 
 namespace DiscUtils.SquashFs
 {
-    internal sealed class DeviceInode : Inode
+    internal class DeviceInode : Inode
     {
         public uint DeviceId { get; set; }
 

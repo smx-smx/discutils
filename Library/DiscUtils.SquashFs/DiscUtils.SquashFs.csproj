@@ -11,4 +11,10 @@
     <ProjectReference Include="..\DiscUtils.Core\DiscUtils.Core.csproj" />
   </ItemGroup>
 
+  <!-- Managed zstd is only available for modern targets; legacy TFMs keep
+       building without zstd support (those images report unsupported). -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
+  </ItemGroup>
+
 </Project>

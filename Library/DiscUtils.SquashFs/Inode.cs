@@ -100,11 +100,24 @@ namespace DiscUtils.SquashFs
                     return new ExtendedDirectoryInode();
                 case InodeType.File:
                     return new RegularInode();
+                case InodeType.ExtendedFile:
+                    return new ExtendedFileInode();
                 case InodeType.Symlink:
                     return new SymlinkInode();
+                case InodeType.ExtendedSymlink:
+                    return new ExtendedSymlinkInode();
                 case InodeType.CharacterDevice:
                 case InodeType.BlockDevice:
                     return new DeviceInode();
+                case InodeType.ExtendedCharacterDevice:
+                case InodeType.ExtendedBlockDevice:
+                    return new ExtendedDeviceInode();
+                case InodeType.Fifo:
+                case InodeType.Socket:
+                    return new IpcInode();
+                case InodeType.ExtendedFifo:
+                case InodeType.ExtendedSocket:
+                    return new ExtendedIpcInode();
                 default:
                     throw new NotImplementedException("Inode type not implemented: " + type);
             }
