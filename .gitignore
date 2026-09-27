@@ -13,3 +13,19 @@ packages/
 
 # Tests
 Tests/LibraryTests/TestResults/
+
+# Local build byproducts when built via sibling Directory.Build.props
+# (OutputPath ../$(Configuration)/) or multitarget beside-source outputs.
+# These are regenerated on every build; never commit.
+Library/Debug/
+Library/Release/
+Library/net20/
+Library/net40/
+Library/net45/
+Library/netstandard1.5/
+Library/netstandard2.0/
+Tests/Debug/
+Tests/Release/
+Utilities/Debug/
+Utilities/Release/
+Utilities/DiscUtilsFs/
