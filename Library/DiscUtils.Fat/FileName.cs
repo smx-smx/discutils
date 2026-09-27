@@ -39,7 +39,10 @@ namespace DiscUtils.Fat
         public static readonly FileName Null =
             new FileName(new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, 0);
 
-        private static readonly byte[] InvalidBytes = { 0x22, 0x2A, 0x2B, 0x2C, 0x2E, 0x2F, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x5B, 0x5C, 0x5D, 0x7C };
+        // NB: 0x3F ('?') is deliberately NOT rejected: real-world images
+        // (e.g. Allwinner e-reader firmware) contain '?' bytes in on-disk
+        // short names, and exact-match lookup must round-trip them.
+        private static readonly byte[] InvalidBytes = { 0x22, 0x2A, 0x2B, 0x2C, 0x2E, 0x2F, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x5B, 0x5C, 0x5D, 0x7C };
 
         private readonly byte[] _raw;
 
@@ -52,14 +55,25 @@ namespace DiscUtils.Fat
         public FileName(string name, Encoding encoding)
         {
             _raw = new byte[11];
-            byte[] bytes = encoding.GetBytes(name.ToUpperInvariant());
+            byte[] bytes = encoding.GetBytes(name);
+            // Uppercase ASCII only (the FAT spec defines case-insensitivity
+            // for ASCII A-Z). A full ToUpperInvariant() would corrupt
+            // non-ASCII bytes (e.g. 0xA0 -> U+00C1 -> 0xB5), breaking
+            // exact-match lookup of real-world names containing them.
+            for (int k = 0; k < bytes.Length; k++)
+            {
+                if (bytes[k] >= 0x61 && bytes[k] <= 0x7A) bytes[k] -= 0x20;
+            }
 
             int nameIdx = 0;
             int rawIdx = 0;
             while (nameIdx < bytes.Length && bytes[nameIdx] != '.' && rawIdx < _raw.Length)
             {
                 byte b = bytes[nameIdx++];
-                if (b < 0x20 || Contains(InvalidBytes, b))
+                // NB: only NUL and structural bytes are rejected. Real-world
+                // images contain control bytes (and '?') in on-disk short
+                // names; exact-match lookup must round-trip them.
+                if (b == 0x00 || Contains(InvalidBytes, b))
                 {
                     throw new ArgumentException("Invalid character in file name '" + (char)b + "'", nameof(name));
                 }
@@ -89,7 +103,7 @@ namespace DiscUtils.Fat
             while (nameIdx < bytes.Length && rawIdx < _raw.Length)
             {
                 byte b = bytes[nameIdx++];
-                if (b < 0x20 || Contains(InvalidBytes, b))
+                if (b == 0x00 || Contains(InvalidBytes, b))
                 {
                     throw new ArgumentException("Invalid character in file extension '" + (char)b + "'", nameof(name));
                 }

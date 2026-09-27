@@ -65,7 +65,20 @@ namespace DiscUtils.Fat
             uint firstSector = (uint)((cluster - 2) * _sectorsPerCluster + _firstDataSector);
 
             _stream.Position = firstSector * _bytesPerSector;
-            StreamUtilities.ReadExact(_stream, buffer, offset, _clusterSize);
+            // Firmware images are routinely truncated past the last used
+            // cluster (FAT geometry claims more sectors than the partition
+            // holds): serve available bytes, zero-fill the rest instead of
+            // throwing, so tail files with intact content stay readable.
+            // File-level reads are length-capped, so the fill is never
+            // served as file content.
+            int totalRead = 0;
+            while (totalRead < _clusterSize)
+            {
+                int numRead = _stream.Read(buffer, offset + totalRead, _clusterSize - totalRead);
+                if (numRead <= 0) break;
+                totalRead += numRead;
+            }
+            Array.Clear(buffer, offset + totalRead, _clusterSize - totalRead);
         }
 
         internal void WriteCluster(uint cluster, byte[] buffer, int offset)
