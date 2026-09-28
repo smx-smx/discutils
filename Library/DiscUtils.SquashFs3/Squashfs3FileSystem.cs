@@ -14,6 +14,12 @@ namespace DiscUtils.SquashFs3
     {
         public const uint Magic = Squashfs3Constants.Magic;
         public const ushort MajorVersion = Squashfs3Constants.MajorVersion;
+
+        /// <summary>Magic sniff: "hsqs" is little-endian, "sqsh" big-endian.</summary>
+        public static bool HasMagic(byte[] prefix, out bool bigEndian)
+        {
+            return Squashfs3Constants.HasMagic(prefix, out bigEndian);
+        }
         public Squashfs3FileSystem(Stream stream)
             : base(new DiscFileSystemOptions())
         {
@@ -35,9 +41,14 @@ namespace DiscUtils.SquashFs3
                 try
                 {
                     byte[] sb = Squashfs3Constants.ReadBytes(stream, 0, Squashfs3Constants.SuperblockSize);
-                    return Squashfs3Constants.ReadU32(sb, 0) == Squashfs3Constants.Magic
-                        && Squashfs3Constants.ReadU16(sb, Squashfs3Constants.MajorOff)
-                            == Squashfs3Constants.MajorVersion;
+                    if (!Squashfs3Constants.HasMagic(sb, out bool bigEndian))
+                    {
+                        return false;
+                    }
+                    ushort major = bigEndian
+                        ? Squashfs3Constants.ReadU16BE(sb, Squashfs3Constants.MajorOff)
+                        : Squashfs3Constants.ReadU16(sb, Squashfs3Constants.MajorOff);
+                    return major == Squashfs3Constants.MajorVersion;
                 }
                 finally
                 {

@@ -6,6 +6,8 @@ namespace DiscUtils.SquashFs3
     internal static class Squashfs3Constants
     {
         public const uint Magic = 0x73717368;
+        // Same magic, byte-swapped ("sqsh"): big-endian image.
+        public const uint SwappedMagic = 0x68737173;
         public const int SuperblockSize = 119;
         public const ushort MajorVersion = 3;
         public const int MetadataSize = 8192;
@@ -67,6 +69,42 @@ namespace DiscUtils.SquashFs3
         public static ulong ReadU64(byte[] buf, long off)
         {
             return (ulong)ReadU32(buf, off) | ((ulong)ReadU32(buf, off + 4) << 32);
+        }
+
+        public static ushort ReadU16BE(byte[] buf, long off)
+        {
+            return (ushort)((buf[off] << 8) | buf[off + 1]);
+        }
+
+        public static uint ReadU32BE(byte[] buf, long off)
+        {
+            return (uint)((buf[off] << 24) | (buf[off + 1] << 16) | (buf[off + 2] << 8) | buf[off + 3]);
+        }
+
+        public static ulong ReadU64BE(byte[] buf, long off)
+        {
+            return ((ulong)ReadU32BE(buf, off) << 32) | ReadU32BE(buf, off + 4);
+        }
+
+        /// <summary>Magic sniff: "hsqs" is little-endian, "sqsh" big-endian.</summary>
+        public static bool HasMagic(byte[] sb, out bool bigEndian)
+        {
+            bigEndian = false;
+            if (sb.Length < 4)
+            {
+                return false;
+            }
+            uint raw = ReadU32(sb, 0);
+            if (raw == Magic)
+            {
+                return true;
+            }
+            if (raw == SwappedMagic)
+            {
+                bigEndian = true;
+                return true;
+            }
+            return false;
         }
 
         public static byte[] ReadBytes(Stream stream, long offset, int count)

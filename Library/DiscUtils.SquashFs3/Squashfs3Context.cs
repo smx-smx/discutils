@@ -125,6 +125,29 @@ namespace DiscUtils.SquashFs3
         private long[] _fragStarts = new long[0];
         private uint[] _fragSizes = new uint[0];
 
+        public bool BigEndian;
+
+        private ushort U16(byte[] buf, long off)
+        {
+            return BigEndian
+                ? Squashfs3Constants.ReadU16BE(buf, off)
+                : Squashfs3Constants.ReadU16(buf, off);
+        }
+
+        private uint U32(byte[] buf, long off)
+        {
+            return BigEndian
+                ? Squashfs3Constants.ReadU32BE(buf, off)
+                : Squashfs3Constants.ReadU32(buf, off);
+        }
+
+        private ulong U64(byte[] buf, long off)
+        {
+            return BigEndian
+                ? Squashfs3Constants.ReadU64BE(buf, off)
+                : Squashfs3Constants.ReadU64(buf, off);
+        }
+
         private Squashfs3Context(Stream stream)
         {
             _stream = stream;
@@ -141,23 +164,24 @@ namespace DiscUtils.SquashFs3
                 throw new IOException("image too small for squashfs superblock");
             }
             byte[] sb = Squashfs3Constants.ReadBytes(stream, 0, Squashfs3Constants.SuperblockSize);
-            if (Squashfs3Constants.ReadU32(sb, 0) != Squashfs3Constants.Magic)
+            if (!Squashfs3Constants.HasMagic(sb, out bool bigEndian))
             {
                 throw new IOException("not a squashfs image");
             }
-            if (Squashfs3Constants.ReadU16(sb, Squashfs3Constants.MajorOff) != Squashfs3Constants.MajorVersion)
+            var ctx = new Squashfs3Context(stream);
+            ctx.BigEndian = bigEndian;
+            if (ctx.U16(sb, Squashfs3Constants.MajorOff) != Squashfs3Constants.MajorVersion)
             {
                 throw new IOException("unsupported squashfs major version");
             }
-            var ctx = new Squashfs3Context(stream);
-            ctx.InodeCount = Squashfs3Constants.ReadU32(sb, Squashfs3Constants.InodesOff);
-            ctx.BlockLog = Squashfs3Constants.ReadU16(sb, Squashfs3Constants.BlockLogOff);
+            ctx.InodeCount = ctx.U32(sb, Squashfs3Constants.InodesOff);
+            ctx.BlockLog = ctx.U16(sb, Squashfs3Constants.BlockLogOff);
             ctx.BlockSize = 1u << ctx.BlockLog;
             if (ctx.BlockLog < 12 || ctx.BlockLog > 20)
             {
                 throw new IOException("bad squashfs block size");
             }
-            uint blockSizeField = Squashfs3Constants.ReadU32(sb, Squashfs3Constants.BlockSizeOff);
+            uint blockSizeField = ctx.U32(sb, Squashfs3Constants.BlockSizeOff);
             if (blockSizeField != ctx.BlockSize)
             {
                 throw new IOException("squashfs block size mismatch");
@@ -165,19 +189,19 @@ namespace DiscUtils.SquashFs3
             ctx.Flags = sb[Squashfs3Constants.FlagsOff];
             ctx.NoUids = sb[Squashfs3Constants.NoUidsOff];
             ctx.NoGuids = sb[Squashfs3Constants.NoGuidsOff];
-            ulong rootRef = Squashfs3Constants.ReadU64(sb, Squashfs3Constants.RootInodeOff);
+            ulong rootRef = ctx.U64(sb, Squashfs3Constants.RootInodeOff);
             ctx.RootStart = (long)(rootRef >> 16);
             ctx.RootOffset = (long)(rootRef & 0xFFFF);
-            ctx.FragmentCount = Squashfs3Constants.ReadU32(sb, Squashfs3Constants.FragmentsOff);
-            ctx.BytesUsed = (long)Squashfs3Constants.ReadU64(sb, Squashfs3Constants.BytesUsedOff);
-            long uidStart = (long)Squashfs3Constants.ReadU64(sb, Squashfs3Constants.UidStartOff);
-            ctx.InodeTableStart = (long)Squashfs3Constants.ReadU64(sb, Squashfs3Constants.InodeTableOff);
-            ctx.DirectoryTableStart = (long)Squashfs3Constants.ReadU64(sb, Squashfs3Constants.DirTableOff);
-            ctx.FragmentTableStart = (long)Squashfs3Constants.ReadU64(sb, Squashfs3Constants.FragTableOff);
+            ctx.FragmentCount = ctx.U32(sb, Squashfs3Constants.FragmentsOff);
+            ctx.BytesUsed = (long)ctx.U64(sb, Squashfs3Constants.BytesUsedOff);
+            long uidStart = (long)ctx.U64(sb, Squashfs3Constants.UidStartOff);
+            ctx.InodeTableStart = (long)ctx.U64(sb, Squashfs3Constants.InodeTableOff);
+            ctx.DirectoryTableStart = (long)ctx.U64(sb, Squashfs3Constants.DirTableOff);
+            ctx.FragmentTableStart = (long)ctx.U64(sb, Squashfs3Constants.FragTableOff);
 
             ctx.ReadMetablocks(ctx.InodeTableStart, ctx.DirectoryTableStart, ctx._inodeRun);
             long fragIndex0 = ctx.FragmentCount > 0
-                ? (long)Squashfs3Constants.ReadU64(
+                ? (long)ctx.U64(
                     Squashfs3Constants.ReadBytes(stream, ctx.FragmentTableStart, 8), 0)
                 : ctx.FragmentTableStart;
             ctx.ReadMetablocks(ctx.DirectoryTableStart, fragIndex0, ctx._dirRun);
@@ -196,7 +220,7 @@ namespace DiscUtils.SquashFs3
             while (pos < tableEnd)
             {
                 byte[] cb = Squashfs3Constants.ReadBytes(_stream, pos, 2);
-                uint cByte = (uint)(cb[0] | (cb[1] << 8));
+                uint cByte = U16(cb, 0);
                 uint len = cByte & 0x7FFF;
                 if (pos + 2 + len > tableEnd)
                 {
@@ -246,7 +270,7 @@ namespace DiscUtils.SquashFs3
             for (int i = 0; i < total; i++)
             {
                 byte[] b = Squashfs3Constants.ReadBytes(_stream, uidStart + 4L * i, 4);
-                _uids[i] = Squashfs3Constants.ReadU32(b, 0);
+                _uids[i] = U32(b, 0);
             }
         }
 
@@ -262,9 +286,9 @@ namespace DiscUtils.SquashFs3
             for (int i = 0; i < indexes; i++)
             {
                 byte[] ib = Squashfs3Constants.ReadBytes(_stream, FragmentTableStart + 8L * i, 8);
-                long metaPos = (long)Squashfs3Constants.ReadU64(ib, 0);
+                long metaPos = (long)U64(ib, 0);
                 byte[] cb = Squashfs3Constants.ReadBytes(_stream, metaPos, 2);
-                uint cByte = (uint)(cb[0] | (cb[1] << 8));
+                uint cByte = U16(cb, 0);
                 uint len = cByte & 0x7FFF;
                 byte[] stored = Squashfs3Constants.ReadBytes(_stream, metaPos + 2, (int)len);
                 byte[] decomp = (cByte & Squashfs3Constants.StoredBitMeta) != 0
@@ -277,8 +301,8 @@ namespace DiscUtils.SquashFs3
             byte[] all = payload.ToArray();
             for (long off = 0; off + 16 <= all.Length && (uint)starts.Count < FragmentCount; off += 16)
             {
-                starts.Add(BitConverter.ToInt64(all, (int)off));
-                sizes.Add(BitConverter.ToUInt32(all, (int)off + 8));
+                starts.Add((long)U64(all, off));
+                sizes.Add(U32(all, off + 8));
             }
             _fragStarts = starts.ToArray();
             _fragSizes = sizes.ToArray();
@@ -301,14 +325,31 @@ namespace DiscUtils.SquashFs3
         public Squashfs3Inode ReadInode(long startBlock, long offset, string name)
         {
             byte[] header = _inodeRun.Read(startBlock, offset, 12);
-            uint w0 = Squashfs3Constants.ReadU32(header, 0);
-            int type = (int)(w0 & 0xF);
+            uint w0 = U32(header, 0);
+            // Bit-packed base word: LSB-first on LE images, MSB-first on BE
+            // (C bitfields laid from opposite ends). Decoded values match.
+            int type;
+            ushort mode;
+            byte uidIdx;
+            byte guidIdx;
+            if (!BigEndian)
+            {
+                type = (int)(w0 & 0xF);
+                mode = (ushort)((w0 >> 4) & 0xFFF);
+                uidIdx = (byte)((w0 >> 16) & 0xFF);
+                guidIdx = (byte)((w0 >> 24) & 0xFF);
+            }
+            else
+            {
+                type = (int)(w0 >> 28);
+                mode = (ushort)((w0 >> 16) & 0xFFF);
+                uidIdx = (byte)((w0 >> 8) & 0xFF);
+                guidIdx = (byte)(w0 & 0xFF);
+            }
             var inode = new Squashfs3Inode();
             inode.Type = type;
-            inode.Mode = (ushort)((w0 >> 4) & 0xFFF);
-            byte uidIdx = (byte)((w0 >> 16) & 0xFF);
-            byte guidIdx = (byte)((w0 >> 24) & 0xFF);
-            inode.Mtime = Squashfs3Constants.ReadU32(header, 4);
+            inode.Mode = mode;
+            inode.Mtime = U32(header, 4);
             inode.Uid = MapId(uidIdx, false, 0);
             inode.Gid = MapId(guidIdx, true, inode.Uid);
 
@@ -319,20 +360,41 @@ namespace DiscUtils.SquashFs3
                     // ldir bitfields straddle units (file_size:27 +
                     // offset:13 = 40 bits): offset spills into @+20 and the
                     // plain start_block slides to @+21 (verified by offsetof).
+                    // BE mirrors the packing MSB-first.
                     byte[] rest = _inodeRun.Read(startBlock, offset + 12, 15);
-                    uint sizeOff = Squashfs3Constants.ReadU32(rest, 4);
-                    inode.FileSize = sizeOff & 0x7FFFFFF;
-                    inode.ContentOffset = (sizeOff >> 27) | ((uint)rest[8] << 5);
-                    inode.ContentStart = Squashfs3Constants.ReadU32(rest, 9);
+                    if (!BigEndian)
+                    {
+                        uint sizeOff = U32(rest, 4);
+                        inode.FileSize = sizeOff & 0x7FFFFFF;
+                        inode.ContentOffset = (sizeOff >> 27) | ((uint)rest[8] << 5);
+                        inode.ContentStart = U32(rest, 9);
+                    }
+                    else
+                    {
+                        inode.FileSize = ((uint)rest[4] << 19) | ((uint)rest[5] << 11)
+                            | ((uint)rest[6] << 3) | ((uint)rest[7] >> 5);
+                        inode.ContentOffset = ((uint)(rest[7] & 0x1F) << 8) | rest[8];
+                        inode.ContentStart = U32(rest, 9);
+                    }
                     break;
                 }
                 case Squashfs3Constants.TypeDir:
                 {
                     byte[] rest = _inodeRun.Read(startBlock, offset + 12, 12);
-                    uint sizeOff = Squashfs3Constants.ReadU32(rest, 4);
-                    inode.FileSize = sizeOff & 0x7FFFF;
-                    inode.ContentOffset = sizeOff >> 19;
-                    inode.ContentStart = Squashfs3Constants.ReadU32(rest, 8);
+                    if (!BigEndian)
+                    {
+                        uint sizeOff = U32(rest, 4);
+                        inode.FileSize = sizeOff & 0x7FFFF;
+                        inode.ContentOffset = sizeOff >> 19;
+                        inode.ContentStart = U32(rest, 8);
+                    }
+                    else
+                    {
+                        inode.FileSize = ((uint)rest[4] << 11) | ((uint)rest[5] << 3)
+                            | ((uint)rest[6] >> 5);
+                        inode.ContentOffset = ((uint)(rest[6] & 0x1F) << 8) | rest[7];
+                        inode.ContentStart = U32(rest, 8);
+                    }
                     break;
                 }
                 case Squashfs3Constants.TypeReg:
@@ -345,15 +407,15 @@ namespace DiscUtils.SquashFs3
                     {
                         p += 4;
                     }
-                    long dataStart = BitConverter.ToInt64(rest, p);
+                    long dataStart = (long)U64(rest, p);
                     p += 8;
-                    uint frag = Squashfs3Constants.ReadU32(rest, p);
+                    uint frag = U32(rest, p);
                     p += 4;
-                    uint fragOff = Squashfs3Constants.ReadU32(rest, p);
+                    uint fragOff = U32(rest, p);
                     p += 4;
                     long size = large
-                        ? BitConverter.ToInt64(rest, p)
-                        : Squashfs3Constants.ReadU32(rest, p);
+                        ? (long)U64(rest, p)
+                        : U32(rest, p);
                     inode.ContentStart = dataStart;
                     inode.Fragment = frag;
                     inode.FragmentOffset = fragOff;
@@ -369,7 +431,7 @@ namespace DiscUtils.SquashFs3
                     var sizes = new uint[blocks];
                     for (long b = 0; b < blocks; b++)
                     {
-                        sizes[b] = Squashfs3Constants.ReadU32(list, b * 4);
+                        sizes[b] = U32(list, b * 4);
                     }
                     inode.BlockSizes = sizes;
                     break;
@@ -377,7 +439,7 @@ namespace DiscUtils.SquashFs3
                 case Squashfs3Constants.TypeSymlink:
                 {
                     byte[] rest = _inodeRun.Read(startBlock, offset + 12, 6);
-                    uint linkSize = Squashfs3Constants.ReadU16(rest, 4);
+                    uint linkSize = U16(rest, 4);
                     byte[] target = _inodeRun.Read(startBlock, offset + 18, linkSize);
                     inode.SymlinkTarget = Encoding.ASCII.GetString(target);
                     inode.FileSize = linkSize;
@@ -386,7 +448,7 @@ namespace DiscUtils.SquashFs3
                 case 10: // large symlink: base + nlink + size + target
                 {
                     byte[] rest = _inodeRun.Read(startBlock, offset + 12, 6);
-                    uint linkSize = Squashfs3Constants.ReadU16(rest, 4);
+                    uint linkSize = U16(rest, 4);
                     byte[] target = _inodeRun.Read(startBlock, offset + 22, linkSize);
                     inode.SymlinkTarget = Encoding.ASCII.GetString(target);
                     inode.FileSize = linkSize;
@@ -399,7 +461,7 @@ namespace DiscUtils.SquashFs3
                     if (type == Squashfs3Constants.TypeBlkdev || type == Squashfs3Constants.TypeChrdev)
                     {
                         byte[] rest = _inodeRun.Read(startBlock, offset + 12, 6);
-                        inode.Rdev = Squashfs3Constants.ReadU16(rest, 4);
+                        inode.Rdev = U16(rest, 4);
                     }
                     break;
                 }
@@ -420,14 +482,24 @@ namespace DiscUtils.SquashFs3
             {
                 byte[] header = _dirRun.Read(dir.ContentStart, dir.ContentOffset + consumed, 9);
                 int count = header[0] + 1;
-                uint blk = Squashfs3Constants.ReadU32(header, 1);
+                uint blk = U32(header, 1);
                 consumed += 9;
                 for (int i = 0; i < count; i++)
                 {
                     byte[] eb = _dirRun.Read(dir.ContentStart, dir.ContentOffset + consumed, 5);
-                    uint packed = Squashfs3Constants.ReadU16(eb, 0);
-                    int entryOff = (int)(packed & 0x1FFF);
-                    int entryType = (int)((packed >> 13) & 0x7);
+                    int entryOff;
+                    int entryType;
+                    if (!BigEndian)
+                    {
+                        uint packed = U16(eb, 0);
+                        entryOff = (int)(packed & 0x1FFF);
+                        entryType = (int)((packed >> 13) & 0x7);
+                    }
+                    else
+                    {
+                        entryOff = (eb[0] << 5) | (eb[1] >> 3);
+                        entryType = eb[1] & 0x7;
+                    }
                     int nameLen = eb[2] + 1;
                     consumed += 5;
                     byte[] nameBytes = _dirRun.Read(dir.ContentStart, dir.ContentOffset + consumed, nameLen);
