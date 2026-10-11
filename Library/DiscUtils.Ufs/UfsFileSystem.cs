@@ -65,7 +65,13 @@ namespace DiscUtils.Ufs
             {
                 return false;
             }
-            long[] bases = new long[] { UfsConstants.SuperblockUfs1, UfsConstants.SuperblockUfs2 };
+            long[] bases = new long[]
+            {
+                UfsConstants.SuperblockUfs1,
+                UfsConstants.SuperblockUfs2,
+                UfsConstants.SuperblockFloppy,
+                UfsConstants.SuperblockPiggy,
+            };
             foreach (long sbBase in bases)
             {
                 if (sbBase + UfsConstants.SuperblockLength > head.Length)

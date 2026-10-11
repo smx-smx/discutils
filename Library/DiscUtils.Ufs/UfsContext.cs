@@ -33,48 +33,112 @@ namespace DiscUtils.Ufs
             {
                 throw new IOException("ufs needs a seekable stream");
             }
-            long[] bases = new long[] { UfsConstants.SuperblockUfs2, UfsConstants.SuperblockUfs1 };
+            long[] bases = new long[]
+            {
+                UfsConstants.SuperblockUfs2,
+                UfsConstants.SuperblockUfs1,
+                UfsConstants.SuperblockFloppy,
+                UfsConstants.SuperblockPiggy,
+            };
             foreach (long sbBase in bases)
             {
                 foreach (bool bigEndian in new bool[] { false, true })
                 {
-                    UfsSuperblock sb = TrySuperblock(stream, sbBase, bigEndian);
-                    if (sb == null)
+                    byte[] raw = TryReadSuperblock(stream, sbBase);
+                    if (raw == null)
                     {
                         continue;
                     }
-                    var ctx = new UfsContext(stream, sb);
-                    try
+                    uint magic = UfsConstants.ReadU32(raw, UfsConstants.MagicOffset, bigEndian);
+                    if (magic != UfsConstants.Ufs1Magic && magic != UfsConstants.Ufs2Magic)
                     {
-                        UfsInode root = ctx.GetInode(UfsConstants.RootIno);
-                        if (!root.IsDirectory)
-                        {
-                            continue;
-                        }
-                        // '.' must loop back to the root: proves dir parsing works
-                        bool self = false;
-                        foreach (UfsDirent e in ctx.ReadDirectory(UfsConstants.RootIno))
-                        {
-                            if (e.Name == "." && e.Ino == UfsConstants.RootIno)
-                            {
-                                self = true;
-                            }
-                        }
-                        if (!self)
-                        {
-                            continue;
-                        }
-                        return ctx;
+                        continue;
                     }
-                    catch (IOException)
+                    // claimed geometry first (strict field checks), then
+                    // halved fallbacks for stale template superblocks
+                    UfsContext proved = TryGeometries(stream, raw, bigEndian);
+                    if (proved != null)
                     {
+                        return proved;
                     }
                 }
             }
             throw new IOException("no ufs filesystem found");
         }
 
-        private static UfsSuperblock TrySuperblock(Stream stream, long sbBase, bool bigEndian)
+        private static UfsContext TryGeometries(Stream stream, byte[] raw, bool bigEndian)
+        {
+            int claimedB = (int)UfsConstants.ReadU32(raw, 48, bigEndian);
+            int claimedF = (int)UfsConstants.ReadU32(raw, 52, bigEndian);
+            UfsContext proved = TryOpenWith(stream, raw, bigEndian, claimedB, claimedF, true);
+            if (proved != null)
+            {
+                return proved;
+            }
+            if (claimedF < 512 || claimedF > (1 << 20) || claimedB < claimedF || claimedB > (1 << 24))
+            {
+                return null;
+            }
+            for (long fragSize = claimedF / 2; fragSize >= 512; fragSize /= 2)
+            {
+                for (long blockSize = fragSize; blockSize <= fragSize * 8 && blockSize <= 65536; blockSize *= 2)
+                {
+                    if (blockSize < 1024)
+                    {
+                        continue;
+                    }
+                    if (blockSize == claimedB && fragSize == claimedF)
+                    {
+                        continue;
+                    }
+                    proved = TryOpenWith(stream, raw, bigEndian, (int)blockSize, (int)fragSize, false);
+                    if (proved != null)
+                    {
+                        return proved;
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static UfsContext TryOpenWith(Stream stream, byte[] raw, bool bigEndian, int blockSize, int fragSize, bool strict)
+        {
+            UfsSuperblock sb;
+            try
+            {
+                sb = strict
+                    ? UfsSuperblock.Read(raw, bigEndian)
+                    : UfsSuperblock.ReadWithGeometry(raw, bigEndian, blockSize, fragSize);
+            }
+            catch (IOException)
+            {
+                return null;
+            }
+            var ctx = new UfsContext(stream, sb);
+            try
+            {
+                UfsInode root = ctx.GetInode(UfsConstants.RootIno);
+                if (!root.IsDirectory)
+                {
+                    return null;
+                }
+                // '.' must loop back to the root: proves dir parsing works
+                foreach (UfsDirent e in ctx.ReadDirectory(UfsConstants.RootIno))
+                {
+                    if (e.Name == "." && e.Ino == UfsConstants.RootIno)
+                    {
+                        return ctx;
+                    }
+                }
+                return null;
+            }
+            catch (IOException)
+            {
+                return null;
+            }
+        }
+
+        private static byte[] TryReadSuperblock(Stream stream, long sbBase)
         {
             try
             {
@@ -82,8 +146,7 @@ namespace DiscUtils.Ufs
                 {
                     return null;
                 }
-                byte[] sb = UfsConstants.ReadBytes(stream, sbBase, UfsConstants.SuperblockLength);
-                return UfsSuperblock.Read(sb, bigEndian);
+                return UfsConstants.ReadBytes(stream, sbBase, UfsConstants.SuperblockLength);
             }
             catch (IOException)
             {

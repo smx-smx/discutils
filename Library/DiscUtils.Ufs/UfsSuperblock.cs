@@ -38,29 +38,59 @@ namespace DiscUtils.Ufs
 
         public static UfsSuperblock Read(byte[] sb, bool bigEndian)
         {
+            bool isUfs2 = ReadMagic(sb, bigEndian);
+            int blockSize = (int)UfsConstants.ReadU32(sb, 48, bigEndian);
+            int fragSize = (int)UfsConstants.ReadU32(sb, 52, bigEndian);
+            return ReadInner(sb, bigEndian, isUfs2, blockSize, fragSize, true);
+        }
+
+        // Override geometry for images whose superblock carries a stale
+        // template geometry (seen in Philips firmware: fields describe one
+        // layout, data another). Geometry is derived, never trusted; the
+        // caller must still prove the layout by walking the root.
+        public static UfsSuperblock ReadWithGeometry(byte[] sb, bool bigEndian, int blockSize, int fragSize)
+        {
+            bool isUfs2 = ReadMagic(sb, bigEndian);
+            return ReadInner(sb, bigEndian, isUfs2, blockSize, fragSize, false);
+        }
+
+        private static bool ReadMagic(byte[] sb, bool bigEndian)
+        {
             if (sb == null || sb.Length < UfsConstants.SuperblockLength)
             {
                 throw new IOException("ufs superblock too short");
             }
             uint magic = UfsConstants.ReadU32(sb, UfsConstants.MagicOffset, bigEndian);
-            bool isUfs2;
             if (magic == UfsConstants.Ufs2Magic)
             {
-                isUfs2 = true;
+                return true;
             }
-            else if (magic == UfsConstants.Ufs1Magic)
+            if (magic == UfsConstants.Ufs1Magic)
             {
-                isUfs2 = false;
+                return false;
             }
-            else
+            throw new IOException("ufs bad magic");
+        }
+
+        private static int Log2Exact(int value)
+        {
+            for (int shift = 0; shift < 31; shift++)
             {
-                throw new IOException("ufs bad magic");
+                if ((1 << shift) == value)
+                {
+                    return shift;
+                }
             }
+            throw new IOException("ufs size is not a power of two");
+        }
+
+        private static UfsSuperblock ReadInner(byte[] sb, bool bigEndian, bool isUfs2, int blockSize, int fragSize, bool strict)
+        {
             var fs = new UfsSuperblock();
             fs.IsUfs2 = isUfs2;
             fs.BigEndian = bigEndian;
-            fs.BlockSize = (int)UfsConstants.ReadU32(sb, 48, bigEndian);
-            fs.FragSize = (int)UfsConstants.ReadU32(sb, 52, bigEndian);
+            fs.BlockSize = blockSize;
+            fs.FragSize = fragSize;
             fs.FragsPerBlock = (int)UfsConstants.ReadU32(sb, 56, bigEndian);
             fs.NumCylGroups = UfsConstants.ReadU32(sb, 44, bigEndian);
             fs.InodesPerBlock = UfsConstants.ReadU32(sb, 120, bigEndian);
@@ -90,46 +120,73 @@ namespace DiscUtils.Ufs
                 fs.Size = UfsConstants.ReadU32(sb, 36, bigEndian);
             }
 
-            if (fs.BlockSize != 4096 && fs.BlockSize != 8192 && fs.BlockSize != 16384
-                && fs.BlockSize != 32768 && fs.BlockSize != 65536)
+            if (strict)
+            {
+                if (fs.BlockSize != 4096 && fs.BlockSize != 8192 && fs.BlockSize != 16384
+                    && fs.BlockSize != 32768 && fs.BlockSize != 65536)
+                {
+                    throw new IOException("ufs bad block size");
+                }
+                if (fs.FragSize < 512 || fs.FragSize > fs.BlockSize || fs.BlockSize % fs.FragSize != 0)
+                {
+                    throw new IOException("ufs bad frag size");
+                }
+                if (fs.FragsPerBlock < 1 || fs.FragsPerBlock > 8 || fs.FragsPerBlock != fs.BlockSize / fs.FragSize)
+                {
+                    throw new IOException("ufs bad frag count");
+                }
+            }
+            else
+            {
+                if (fs.FragSize < 512 || fs.FragSize > fs.BlockSize || fs.BlockSize % fs.FragSize != 0)
+                {
+                    throw new IOException("ufs bad frag size");
+                }
+                fs.FragsPerBlock = fs.BlockSize / fs.FragSize;
+                if (fs.FragsPerBlock < 1 || fs.FragsPerBlock > 8)
+                {
+                    throw new IOException("ufs bad frag count");
+                }
+                // derive geometry the stale fields may misdescribe
+                bshift = Log2Exact(fs.BlockSize);
+                fshift = Log2Exact(fs.FragSize);
+                bmask = ~(uint)(fs.BlockSize - 1);
+                fmask = ~(uint)(fs.FragSize - 1);
+                fragshift = Log2Exact(fs.FragsPerBlock);
+                fs.InodesPerBlock = (uint)(fs.BlockSize / (isUfs2 ? 256 : 128));
+                fs.AddrsPerBlock = (uint)(fs.BlockSize / (isUfs2 ? 8 : 4));
+            }
+            if (fs.BlockSize < 1024 || fs.BlockSize > 65536)
             {
                 throw new IOException("ufs bad block size");
-            }
-            if (fs.FragSize < 512 || fs.FragSize > fs.BlockSize || fs.BlockSize % fs.FragSize != 0)
-            {
-                throw new IOException("ufs bad frag size");
-            }
-            if (fs.FragsPerBlock < 1 || fs.FragsPerBlock > 8 || fs.FragsPerBlock != fs.BlockSize / fs.FragSize)
-            {
-                throw new IOException("ufs bad frag count");
             }
             if (fs.NumCylGroups < 1 || fs.NumCylGroups > 200000)
             {
                 throw new IOException("ufs bad group count");
             }
             uint wantInopb = (uint)(fs.BlockSize / (isUfs2 ? 256 : 128));
-            if (fs.InodesPerBlock != wantInopb)
+            if (strict && fs.InodesPerBlock != wantInopb)
             {
                 throw new IOException("ufs bad inodes-per-block");
             }
             uint wantNindir = (uint)(fs.BlockSize / (isUfs2 ? 8 : 4));
-            if (fs.AddrsPerBlock != wantNindir)
+            if (strict && fs.AddrsPerBlock != wantNindir)
             {
                 throw new IOException("ufs bad addrs-per-block");
             }
-            if (bshift < 0 || bshift > 31 || (1 << bshift) != fs.BlockSize)
+            if (strict && (bshift < 0 || bshift > 31 || (1 << bshift) != fs.BlockSize))
             {
                 throw new IOException("ufs bad block shift");
             }
-            if (fshift < 0 || fshift > 31 || (1 << fshift) != fs.FragSize)
+            if (strict && (fshift < 0 || fshift > 31 || (1 << fshift) != fs.FragSize))
             {
                 throw new IOException("ufs bad frag shift");
             }
-            if (bmask != ~(uint)(fs.BlockSize - 1) || fmask != ~(uint)(fs.FragSize - 1))
+            if (strict && (bmask != ~(uint)(fs.BlockSize - 1) || fmask != ~(uint)(fs.FragSize - 1)))
             {
                 throw new IOException("ufs bad masks");
             }
-            if (fragshift < 0 || fragshift > 3 || (1 << fragshift) != fs.FragsPerBlock)
+            if (strict && (fragshift < 0 || fragshift > 3 || (1 << fragshift) != fs.FragsPerBlock))
             {
                 throw new IOException("ufs bad frag shift");
             }
@@ -137,7 +194,7 @@ namespace DiscUtils.Ufs
             {
                 throw new IOException("ufs bad optim");
             }
-            if (cgsize < 64 || cgsize > (uint)fs.BlockSize)
+            if (cgsize < 64 || (strict && cgsize > (uint)fs.BlockSize))
             {
                 throw new IOException("ufs bad cg size");
             }

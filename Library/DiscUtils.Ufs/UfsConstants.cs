@@ -15,8 +15,12 @@ namespace DiscUtils.Ufs
         public const int MagicOffset = 1372;
         public const int SuperblockLength = 1376;
 
+        // Superblock search locations (FreeBSD SBLOCKSEARCH): UFS2 at 64K,
+        // UFS1 at 8K, floppy at 0, piggy at 256K.
         public const long SuperblockUfs1 = 8192;
         public const long SuperblockUfs2 = 65536;
+        public const long SuperblockFloppy = 0;
+        public const long SuperblockPiggy = 262144;
 
         public const uint CgMagic = 0x090255;
         public const uint RootIno = 2;
