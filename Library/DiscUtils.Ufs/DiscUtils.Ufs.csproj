@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../common-library.props" />
+
+  <PropertyGroup>
+    <Description>DiscUtils UFS (FFS) filesystem parser</Description>
+    <Authors>Yafex</Authors>
+    <PackageTags>DiscUtils;Filesystem;UFS;FFS</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DiscUtils.Core\DiscUtils.Core.csproj" />
+  </ItemGroup>
+
+</Project>
