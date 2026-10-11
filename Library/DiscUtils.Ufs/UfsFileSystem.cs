@@ -7,7 +7,7 @@ namespace DiscUtils.Ufs
 {
     /// <summary>
     /// Read-only UFS (Berkeley FFS) driver: UFS1 and UFS2, either endianness
-    /// (e.g. Philips SDDL/FreeBSD firmware payloads). Opens the image from
+    /// (e.g. Panasonic SDDL/FreeBSD firmware payloads). Opens the image from
     /// a stream positioned at the filesystem start and exposes it through
     /// DiscFileSystem.
     /// </summary>

@@ -45,7 +45,7 @@ namespace DiscUtils.Ufs
         }
 
         // Override geometry for images whose superblock carries a stale
-        // template geometry (seen in Philips firmware: fields describe one
+        // template geometry (seen in Panasonic firmware: fields describe one
         // layout, data another). Geometry is derived, never trusted; the
         // caller must still prove the layout by walking the root.
         public static UfsSuperblock ReadWithGeometry(byte[] sb, bool bigEndian, int blockSize, int fragSize)
