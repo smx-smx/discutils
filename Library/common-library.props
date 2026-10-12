@@ -15,6 +15,10 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!-- The beta SourceLink git task host no longer loads on current SDKs,
+         which breaks from-scratch builds (MSB4018 in LocateRepository).
+         Disable the repository queries; embedding the revision id is skipped. -->
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
   </PropertyGroup>
 
   <ItemGroup>
