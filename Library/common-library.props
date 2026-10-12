@@ -19,6 +19,12 @@
          which breaks from-scratch builds (MSB4018 in LocateRepository).
          Disable the repository queries; embedding the revision id is skipped. -->
     <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
+    <!-- Newer nullable-annotation syntax is used in places; the old
+         TFMs below otherwise default to C# 7.3 and fail from scratch. -->
+    <LangVersion>latest</LangVersion>
+    <!-- Newer nullable-annotation syntax is used in places; the old
+         TFMs below otherwise default to C# 7.3 and fail from scratch. -->
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
