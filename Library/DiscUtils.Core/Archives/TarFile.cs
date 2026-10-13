@@ -49,12 +49,41 @@ namespace DiscUtils.Archives
             hdr.ReadFrom(hdrBuf, 0);
             while (hdr.FileLength != 0 || !string.IsNullOrEmpty(hdr.FileName))
             {
+                if (!TarHeader.IsValidHeader(hdrBuf, 0))
+                {
+                    throw new InvalidDataException("Invalid tar header");
+                }
+
                 FileRecord record = new FileRecord(hdr.FileName, _fileStream.Position, hdr.FileLength);
                 _files.Add(record.Name, record);
                 _fileStream.Position += (hdr.FileLength + 511) / 512 * 512;
 
                 hdrBuf = StreamUtilities.ReadExact(_fileStream, TarHeader.Length);
                 hdr.ReadFrom(hdrBuf, 0);
+            }
+        }
+
+        /// <summary>
+        /// Probes a buffer for a valid ustar header. Never throws.
+        /// </summary>
+        /// <param name="buffer">Bytes to probe.</param>
+        /// <param name="offset">Offset of the candidate header.</param>
+        public static bool IsHeader(byte[] buffer, int offset)
+        {
+            return TarHeader.IsValidHeader(buffer, offset);
+        }
+
+        /// <summary>
+        /// All archive members in stored order.
+        /// </summary>
+        public IEnumerable<TarFileEntry> Entries
+        {
+            get
+            {
+                foreach (FileRecord record in _files.Values)
+                {
+                    yield return new TarFileEntry(record.Name, record.Start, record.Length);
+                }
             }
         }
 
@@ -140,5 +169,28 @@ namespace DiscUtils.Archives
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// A single tar archive member: name plus its data range relative to
+    /// the start of the tar stream the owning <see cref="TarFile"/> reads.
+    /// </summary>
+    public sealed class TarFileEntry
+    {
+        internal TarFileEntry(string name, long offset, long length)
+        {
+            Name = name;
+            Offset = offset;
+            Length = length;
+        }
+
+        /// <summary>Member name.</summary>
+        public string Name { get; }
+
+        /// <summary>Data offset relative to the tar stream start.</summary>
+        public long Offset { get; }
+
+        /// <summary>Data length in bytes.</summary>
+        public long Length { get; }
     }
 }

@@ -80,10 +80,84 @@ namespace DiscUtils.Archives
 
             for (int i = 0; i < value.Length; ++i)
             {
+                // ustar pads numeric fields with leading spaces or zeroes
+                if (value[i] == ' ' || value[i] == '\0')
+                {
+                    continue;
+                }
+
                 result = result * 8 + (value[i] - '0');
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Checks for a valid ustar header: magic plus a matching checksum
+        /// over a parseable size field. Never throws.
+        /// </summary>
+        internal static bool IsValidHeader(byte[] buffer, int offset)
+        {
+            if (buffer == null || offset < 0 || offset + Length > buffer.Length)
+            {
+                return false;
+            }
+
+            if (buffer[offset + 257] != (byte)'u'
+                || buffer[offset + 258] != (byte)'s'
+                || buffer[offset + 259] != (byte)'t'
+                || buffer[offset + 260] != (byte)'a'
+                || buffer[offset + 261] != (byte)'r')
+            {
+                return false;
+            }
+
+            long sum = 0;
+            for (int i = 0; i < Length; ++i)
+            {
+                sum += (i >= 148 && i < 156) ? 32 : buffer[offset + i];
+            }
+
+            return TryParseOctal(buffer, offset + 148, 8, out long stored)
+                && sum == stored
+                && TryParseOctal(buffer, offset + 124, 12, out _);
+        }
+
+        private static bool TryParseOctal(byte[] buffer, int offset, int length, out long value)
+        {
+            value = 0;
+
+            int i = 0;
+            while (i < length && (buffer[offset + i] == (byte)' ' || buffer[offset + i] == 0))
+            {
+                ++i;
+            }
+
+            if (i >= length)
+            {
+                return false;
+            }
+
+            int digits = 0;
+            while (i < length)
+            {
+                byte b = buffer[offset + i];
+                if (b == 0 || b == (byte)' ')
+                {
+                    break;
+                }
+
+                if (b < (byte)'0' || b > (byte)'7')
+                {
+                    return false;
+                }
+
+                value = (value << 3) + (b - (byte)'0');
+                ++digits;
+                ++i;
+            }
+
+            return digits > 0;
         }
 
         private static string LongToOctal(long value, int length)
